@@ -1,4 +1,4 @@
-name: Node.js Package
+name: Node.js package
 
 on:
   release:
@@ -23,7 +23,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
