@@ -3,6 +3,10 @@
         "**/node_modules/": true
     },
     "cSpell.words": [
+        "awscurrent",
+        "awspending",
+        "awsprevious",
+        "idempotency",
         "leasot"
     ]
 }
