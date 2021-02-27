@@ -23,14 +23,14 @@ jobs:
       - name: Test
         run: npm test
 
-  publish-gpr:
-    name: Publish to GitHub Package Registry
+  publish:
+    name: Publish
     needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Setup Node.js environment
+      - name: Setup Node.js environment for GitHub Package Registry
         uses: actions/setup-node@v2
         with:
           node-version: 14
@@ -40,29 +40,17 @@ jobs:
         run: npm ci
       - run: npm config list
       - run: npm config list --json
-      - name: Publish package
+      - name: Publish package to GitHub Package Registry
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB}}
-
-  publish-npm:
-    name: Publish to npm
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Setup Node.js environment
+      - name: Setup Node.js environment for npm
         uses: actions/setup-node@v2
         with:
-          node-version: 14
-          check-latest: true
           registry-url: https://registry.npmjs.org/
-      - name: Clean install dependencies
-        run: npm ci
       - run: npm config list
       - run: npm config list --json
-      - name: Publish package
+      - name: Publish package to npm
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM}}
