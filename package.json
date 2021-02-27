@@ -1,6 +1,6 @@
 {
   "name": "@silver886/aws-secrets-manager",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Helpers for AWS Secrets Manager SDK",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -10,7 +10,7 @@
     "build-test": "tsc -p ./test/tsconfig.test.json",
     "test": "jest",
     "prepare": "tsc",
-    "prepublishOnly": "npm test && npm run lint"
+    "prepublishOnly": "npm run build-test && npm test"
   },
   "repository": {
     "type": "git",
