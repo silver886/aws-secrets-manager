@@ -6,11 +6,11 @@
   "types": "./lib/index.d.ts",
   "scripts": {
     "comments": "leasot --ignore node_modules/** .git/** --tags NOTE OPTIMIZE TODO HACK XXX FIXME BUG --filetype .ts **",
-    "watch-test": "tsc -w -p ./test/tsconfig.test.json",
-    "build-test": "tsc -p ./test/tsconfig.test.json",
+    "test-watch": "tsc -w -p ./test/tsconfig.test.json",
+    "test-build": "tsc -p ./test/tsconfig.test.json",
     "test": "jest",
     "prepare": "tsc",
-    "prepublishOnly": "npm run build-test && npm test"
+    "prepublishOnly": "npm run test-build && npm test"
   },
   "repository": {
     "type": "git",

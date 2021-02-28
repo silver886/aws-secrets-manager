@@ -19,7 +19,7 @@ jobs:
       - name: Clean install dependencies
         run: npm ci
       - name: Build test
-        run: npm run build-test
+        run: npm run test-build
       - name: Test
         run: npm test
 

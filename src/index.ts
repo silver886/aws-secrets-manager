@@ -37,6 +37,8 @@ export enum RotationStep {
     FINISH_SECRET = 'finishSecret',
 }
 
+type SecretConsumer = (secret: Secret) => void;
+
 export interface RotationEvent {
     /* eslint-disable @typescript-eslint/naming-convention */
     /**
@@ -122,6 +124,38 @@ export class Rotation {
                 message: `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`,
             };
         }
+    }
+
+    async setSecret(serviceSetup: SecretConsumer): Promise<Result> {
+        this.checkRotationStep(RotationStep.SET_SECRET);
+
+        const data = await this.secretsManager.getSecretValue({
+            /* eslint-disable @typescript-eslint/naming-convention */
+            SecretId: this.event.SecretId,
+            VersionStage: VersionStage.PENDING,
+            /* eslint-enable @typescript-eslint/naming-convention */
+        }).promise();
+        serviceSetup(data);
+
+        return {
+            message: `${RotationStep.SET_SECRET}: Successfully set the secret in the service.`,
+        };
+    }
+
+    async testSecret(serviceTest: SecretConsumer): Promise<Result> {
+        this.checkRotationStep(RotationStep.TEST_SECRET);
+
+        const data = await this.secretsManager.getSecretValue({
+            /* eslint-disable @typescript-eslint/naming-convention */
+            SecretId: this.event.SecretId,
+            VersionStage: VersionStage.PENDING,
+            /* eslint-enable @typescript-eslint/naming-convention */
+        }).promise();
+        serviceTest(data);
+
+        return {
+            message: `${RotationStep.TEST_SECRET}: Successfully test the secret in the service.`,
+        };
     }
 
     async finishSecret(): Promise<Result> {
