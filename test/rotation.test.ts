@@ -1,7 +1,12 @@
 import * as sdk from 'aws-sdk';
 import * as sdkMock from 'aws-sdk-mock';
+sdkMock.setSDKInstance(sdk);
 
 import * as src from '../src';
+
+type SecretsManagerTypesDescribeSecretCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.DescribeSecretResponse | undefined) => void;
+type SecretsManagerTypesGetSecretValueCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.GetSecretValueResponse | undefined) => void;
+type SecretsManagerTypesPutSecretValueCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.PutSecretValueResponse | undefined) => void;
 
 describe('Initial secret rotation', () => {
     describe('given normal event', () => {
@@ -12,7 +17,6 @@ describe('Initial secret rotation', () => {
             ClientRequestToken: 'version-id-new',
             /* eslint-enable @typescript-eslint/naming-convention */
         };
-        type SecretsManagerTypesDescribeSecretCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.DescribeSecretResponse | undefined) => void
 
         describe('when the secret is normal', () => {
             const resp: sdk.SecretsManager.Types.DescribeSecretResponse = {
@@ -36,8 +40,10 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(new src.Rotation(event)).toBeDefined();
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
 
@@ -63,8 +69,10 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(() => { new src.Rotation(event) }).toThrowError(new Error(`Secret ${event.SecretId} is not enabled for rotation.`));
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
 
@@ -82,8 +90,10 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(() => { new src.Rotation(event) }).toThrowError(new Error(`Secret ${event.SecretId} has no version for rotation.`));
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
 
@@ -102,8 +112,10 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(() => { new src.Rotation(event) }).toThrowError(new Error(`Secret version ${event.ClientRequestToken} has no stage for rotation of secret ${event.SecretId}.`));
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
 
@@ -126,8 +138,10 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(() => { new src.Rotation(event) }).toThrowError(new Error(`Secret version ${event.ClientRequestToken} already set as ${src.VersionStage.CURRENT} for secret ${event.SecretId}.`));
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
 
@@ -148,9 +162,87 @@ describe('Initial secret rotation', () => {
                 ) => {
                     callback(undefined, resp);
                 });
+
                 expect(() => { new src.Rotation(event) }).toThrowError(new Error(`Secret version ${event.ClientRequestToken} not set as ${src.VersionStage.PENDING} for rotation of secret ${event.SecretId}.`));
-                sdkMock.restore('SecretsManager');
+
+                sdkMock.restore('SecretsManager', 'describeSecret');
+            });
+        });
+    });
+
+    describe('given abnormal event', () => {
+        const event: unknown = {};
+
+        it('rotation cycle should not be created', () => {
+            sdkMock.mock('SecretsManager', 'describeSecret', undefined);
+
+            expect(() => { new src.Rotation(event as src.RotationEvent) }).toThrowError('Missing required key \'SecretId\' in params');
+
+            sdkMock.restore('SecretsManager', 'describeSecret');
+        });
+    });
+});
+
+describe('During secret rotation', () => {
+    describe('given normal rotation cycle at create secret step', () => {
+        const event: src.RotationEvent = {
+            /* eslint-disable @typescript-eslint/naming-convention */
+            Step: src.RotationStep.CREATE_SECRET,
+            SecretId: 'aws-secrets-manager-arn',
+            ClientRequestToken: 'version-id-new',
+            /* eslint-enable @typescript-eslint/naming-convention */
+        };
+        const resp: sdk.SecretsManager.Types.DescribeSecretResponse = {
+            /* eslint-disable @typescript-eslint/naming-convention */
+            RotationEnabled: true,
+            VersionIdsToStages: {
+                'version-id-old': [
+                    src.VersionStage.CURRENT,
+                ],
+                'version-id-new': [
+                    src.VersionStage.PENDING,
+                ],
+            },
+            /* eslint-enable @typescript-eslint/naming-convention */
+        };
+
+        describe('when the secret is normal', () => {
+            const errGetSecretValue: sdk.AWSError = {
+                ...new Error(''),
+                code: 'ResourceNotFoundException',
+                message: 'We can\'t find the resource that you asked for',
+                time: new Date(Date.now()),
+            };
+
+            it('new secret should be created', async () => {
+                sdkMock.mock('SecretsManager', 'describeSecret', (
+                    _: sdk.SecretsManager.Types.DescribeSecretRequest,
+                    callback: SecretsManagerTypesDescribeSecretCallback,
+                ) => {
+                    callback(undefined, resp);
+                });
+                sdkMock.mock('SecretsManager', 'getSecretValue', (
+                    _: sdk.SecretsManager.Types.GetSecretValueRequest,
+                    callback: SecretsManagerTypesGetSecretValueCallback,
+                ) => {
+                    callback(errGetSecretValue, undefined);
+                });
+                sdkMock.mock('SecretsManager', 'putSecretValue', undefined);
+
+                const rotation = new src.Rotation(event);
+
+                expect(await rotation.createSecret({
+                    SecretString: 'secret', // eslint-disable-line @typescript-eslint/naming-convention
+                })).toMatchObject({
+                    message: `${src.RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${event.SecretId} with version ${event.ClientRequestToken}.`,
+                });
+
+                sdkMock.restore('SecretsManager', 'getSecretValue');
+                sdkMock.restore('SecretsManager', 'putSecretValue');
+                sdkMock.restore('SecretsManager', 'describeSecret');
             });
         });
     });
 });
+
+// TODO(Leo Liu): Add unit test for all rotation steps

@@ -1,5 +1,29 @@
 import * as sdk from 'aws-sdk';
 
+export interface Secret {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    /**
+     * The decrypted part of the protected secret information that was originally provided as binary data in the form of a byte array.
+     * The response parameter represents the binary data as a base64-encoded string.
+     * This parameter is not used if the secret is created by the Secrets Manager console.
+     * If you store custom information in this field of the secret, then you must code your Lambda rotation function to parse and interpret whatever you store in the SecretString or SecretBinary fields.
+     */
+    SecretBinary?: sdk.SecretsManager.SecretBinaryType;
+    /**
+     * The decrypted part of the protected secret information that was originally provided as a string.
+     * If you create this secret by using the Secrets Manager console then only the SecretString parameter contains data.
+     * Secrets Manager stores the information as a JSON structure of key/value pairs that the Lambda rotation function knows how to parse.
+     * If you store custom information in the secret by using the CreateSecret, UpdateSecret, or PutSecretValue API operations instead of the Secrets Manager console, or by using the Other secret type in the console, then you must code your Lambda rotation function to parse and interpret those values.
+     */
+    SecretString?: sdk.SecretsManager.SecretStringType;
+    /* eslint-enable @typescript-eslint/naming-convention */
+}
+
+export interface Result {
+    message?: string;
+    secret?: Secret;
+}
+
 export enum VersionStage {
     CURRENT = 'AWSCURRENT',
     PENDING = 'AWSPENDING',
@@ -38,10 +62,6 @@ export interface RotationEvent {
     /* eslint-enable @typescript-eslint/naming-convention */
 }
 
-export type Secret = { SecretBinary?: sdk.SecretsManager.SecretBinaryType; SecretString?: sdk.SecretsManager.SecretStringType } // eslint-disable-line @typescript-eslint/naming-convention
-export type SecretProvider = () => Promise<Secret>
-export type SecretConsumer = (secret: Secret) => Promise<void>
-
 export class Rotation {
     private secretsManager: sdk.SecretsManager;
 
@@ -72,7 +92,7 @@ export class Rotation {
         });
     }
 
-    async createSecret(secretGenerate: SecretProvider): Promise<string> {
+    async createSecret(secret: Secret): Promise<Result> {
         this.checkRotationStep(RotationStep.CREATE_SECRET);
 
         try {
@@ -82,11 +102,14 @@ export class Rotation {
                 VersionId: this.event.ClientRequestToken,
                 /* eslint-enable @typescript-eslint/naming-convention */
             }).promise();
-            return `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate}, of secret ${this.event.SecretId}.`;
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate}, of secret ${this.event.SecretId}.`,
+                secret: data,
+            };
         } catch (err) {
             if (err.code !== 'ResourceNotFoundException') throw err;
             await this.secretsManager.putSecretValue({
-                ...await secretGenerate(),
+                ...secret,
                 /* eslint-disable @typescript-eslint/naming-convention */
                 SecretId: this.event.SecretId,
                 ClientRequestToken: this.event.ClientRequestToken,
@@ -95,39 +118,13 @@ export class Rotation {
                 ],
                 /* eslint-enable @typescript-eslint/naming-convention */
             }).promise();
-            return `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`;
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`,
+            };
         }
     }
 
-    async setSecret(serviceSetup: SecretConsumer): Promise<string> {
-        this.checkRotationStep(RotationStep.SET_SECRET);
-
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PENDING,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
-        await serviceSetup(data);
-
-        return `${RotationStep.SET_SECRET}: Successfully set the secret in the service.`;
-    }
-
-    async testSecret(serviceTest: SecretConsumer): Promise<string> {
-        this.checkRotationStep(RotationStep.TEST_SECRET);
-
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PENDING,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
-        await serviceTest(data);
-
-        return `${RotationStep.TEST_SECRET}: Successfully test the secret in the service.`;
-    }
-
-    async finishSecret(): Promise<string> {
+    async finishSecret(): Promise<Result> {
         this.checkRotationStep(RotationStep.FINISH_SECRET);
 
         const data = await this.secretsManager.getSecretValue({
@@ -137,7 +134,9 @@ export class Rotation {
             /* eslint-enable @typescript-eslint/naming-convention */
         }).promise();
         if (data.VersionId === this.event.ClientRequestToken) {
-            return `${RotationStep.FINISH_SECRET}: Version ${data.VersionId} already marked as ${VersionStage.CURRENT} for ${this.event.SecretId}.`;
+            return {
+                message: `${RotationStep.FINISH_SECRET}: Version ${data.VersionId} already marked as ${VersionStage.CURRENT} for ${this.event.SecretId}.`,
+            };
         }
 
         await this.secretsManager.updateSecretVersionStage({
@@ -157,19 +156,20 @@ export class Rotation {
             /* eslint-enable @typescript-eslint/naming-convention */
         }).promise();
 
-        return `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`;
+        return {
+            message: `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`,
+        };
     }
 
-    async revokePreviousSecret(revoke: SecretConsumer): Promise<string> {
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PREVIOUS,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
-        await revoke(data);
-
-        return `revokePreviousSecret: Successfully revoke previous version ${data.VersionId} for secret ${this.event.SecretId}.`;
+    async getSecret(versionStage: VersionStage): Promise<Result> {
+        return {
+            secret: await this.secretsManager.getSecretValue({
+                /* eslint-disable @typescript-eslint/naming-convention */
+                SecretId: this.event.SecretId,
+                VersionStage: versionStage,
+                /* eslint-enable @typescript-eslint/naming-convention */
+            }).promise(),
+        };
     }
 
     private checkRotationStep(expect: RotationStep): void {
