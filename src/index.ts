@@ -64,7 +64,6 @@ export interface RotationEvent {
 
 export class Rotation {
     private secretsManager: sdk.SecretsManager;
-    private finished: boolean;
 
     constructor(private event: RotationEvent, options?: sdk.SecretsManager.Types.ClientConfiguration) {
         this.secretsManager = new sdk.SecretsManager(options);
@@ -78,10 +77,10 @@ export class Rotation {
             if (!data.RotationEnabled) {
                 throw new Error(`Secret ${this.event.SecretId} is not enabled for rotation.`);
             }
-            if (data.VersionIdsToStages === undefined) {
+            if (!data.VersionIdsToStages) {
                 throw new Error(`Secret ${this.event.SecretId} has no version for rotation.`);
             }
-            if (data.VersionIdsToStages[this.event.ClientRequestToken] === undefined) {
+            if (!data.VersionIdsToStages[this.event.ClientRequestToken]) {
                 throw new Error(`Secret version ${this.event.ClientRequestToken} has no stage for rotation of secret ${this.event.SecretId}.`);
             }
             if (data.VersionIdsToStages[this.event.ClientRequestToken].includes(VersionStage.CURRENT)) {
@@ -128,12 +127,19 @@ export class Rotation {
     async setSecret(): Promise<Result> {
         this.checkRotationStep(RotationStep.SET_SECRET);
 
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PENDING,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
+        let data: sdk.SecretsManager.GetSecretValueResponse = {};
+        do {
+            try {
+                data = await this.secretsManager.getSecretValue({
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    SecretId: this.event.SecretId,
+                    VersionStage: VersionStage.PENDING,
+                    /* eslint-enable @typescript-eslint/naming-convention */
+                }).promise();
+            } catch (err) {
+                if (err.code !== 'ResourceNotFoundException') throw err;
+            }
+        } while (!Object.keys(data).length);
 
         return {
             message: `${RotationStep.SET_SECRET}: Successfully retrieved version ${data.VersionId} of secret ${this.event.SecretId} for setting the secret in the service.`,
@@ -144,13 +150,19 @@ export class Rotation {
     async testSecret(): Promise<Result> {
         this.checkRotationStep(RotationStep.TEST_SECRET);
 
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PENDING,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
-
+        let data: sdk.SecretsManager.GetSecretValueResponse = {};
+        do {
+            try {
+                data = await this.secretsManager.getSecretValue({
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    SecretId: this.event.SecretId,
+                    VersionStage: VersionStage.PENDING,
+                    /* eslint-enable @typescript-eslint/naming-convention */
+                }).promise();
+            } catch (err) {
+                if (err.code !== 'ResourceNotFoundException') throw err;
+            }
+        } while (!Object.keys(data).length);
 
         return {
             message: `${RotationStep.TEST_SECRET}: Successfully retrieved version ${data.VersionId} of secret ${this.event.SecretId} for testing the secret in the service.`,
@@ -190,28 +202,8 @@ export class Rotation {
             /* eslint-enable @typescript-eslint/naming-convention */
         }).promise();
 
-        this.finished = true;
         return {
-            message: `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`,
-        };
-    }
-
-    async revokePreviousSecret(): Promise<Result> {
-        this.checkRotationStep(RotationStep.FINISH_SECRET);
-
-        if (!this.finished) {
-            throw new Error(`revokePreviousSecret: Secret version ${this.event.ClientRequestToken} not set as ${VersionStage.CURRENT} for secret ${this.event.SecretId}.`);
-        }
-
-        const data = await this.secretsManager.getSecretValue({
-            /* eslint-disable @typescript-eslint/naming-convention */
-            SecretId: this.event.SecretId,
-            VersionStage: VersionStage.PREVIOUS,
-            /* eslint-enable @typescript-eslint/naming-convention */
-        }).promise();
-
-        return {
-            message: `revokePreviousSecret: Successfully retrieved previous version ${data.VersionId} of secret ${this.event.SecretId} for revocation.`,
+            message: `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}. Successfully retrieved previous version ${data.VersionId} of secret ${this.event.SecretId} for revocation.`,
             secret: data,
         };
     }
