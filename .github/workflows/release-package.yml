@@ -39,8 +39,6 @@ jobs:
           registry-url: https://npm.pkg.github.com/
       - name: Clean install dependencies
         run: npm ci
-      - run: npm config list
-      - run: npm config list --json
       - name: Publish package to GitHub Package Registry
         run: npm publish
         env:
@@ -50,8 +48,6 @@ jobs:
         with:
           scope: ${{github.repository_owner}}
           registry-url: https://registry.npmjs.org/
-      - run: npm config list
-      - run: npm config list --json
       - name: Publish package to npm
         run: npm publish --access public
         env:

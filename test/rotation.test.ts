@@ -1,32 +1,43 @@
-import * as AwsSdkMock from 'aws-sdk-mock';
-import { SecretsManager } from 'aws-sdk';
+import * as sdk from 'aws-sdk';
+import * as sdkMock from 'aws-sdk-mock';
 
-import { Rotation, RotationStep, VersionStage } from '../src';
+import * as src from '../src';
 
 describe('Initial secret rotation', () => {
-    // GIVEN
-    const event = {
-        Step: RotationStep.CreateSecret,
-        SecretId: 'aws-secrets-manager-arn',
-        ClientRequestToken: 'version-id-new',
-    };
-    // THEN
-    it('should pass', () => {
-        AwsSdkMock.mock('SecretsManager', 'describeSecret', (params: SecretsManager.Types.DescribeSecretRequest, callback: any) => {
-            console.log('SecretsManager: describeSecret: mocked');
-            callback(undefined, {
-                RotationEnabled: true,
-                VersionIdsToStages: {
-                    'version-id-old': [
-                        VersionStage.Current,
-                    ],
-                    'version-id-new': [
-                        VersionStage.Pending,
-                    ],
-                },
+    describe('given normal event', () => {
+        const event: src.RotationEvent = {
+            /* eslint-disable @typescript-eslint/naming-convention */
+            Step: src.RotationStep.CREATE_SECRET,
+            SecretId: 'aws-secrets-manager-arn',
+            ClientRequestToken: 'version-id-new',
+            /* eslint-enable @typescript-eslint/naming-convention */
+        };
+        type SecretsManagerTypesDescribeSecretCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.DescribeSecretResponse | undefined) => void
+        describe('when response normal', () => {
+            sdkMock.mock('SecretsManager', 'describeSecret', (
+                _: sdk.SecretsManager.Types.DescribeSecretRequest,
+                callback: SecretsManagerTypesDescribeSecretCallback,
+            ) => {
+                console.log('SecretsManager: describeSecret: mocked');
+                callback(undefined, {
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    RotationEnabled: true,
+                    VersionIdsToStages: {
+                        'version-id-old': [
+                            src.VersionStage.CURRENT,
+                        ],
+                        'version-id-new': [
+                            src.VersionStage.PENDING,
+                        ],
+                    },
+                    /* eslint-enable @typescript-eslint/naming-convention */
+                });
+            });
+
+            it('should pass', () => {
+                expect(new src.Rotation(event)).toBeDefined();
+                sdkMock.restore('SecretsManager');
             });
         });
-        expect(new Rotation(event)).toBeDefined();
-        AwsSdkMock.restore('SecretsManager');
     });
 });
