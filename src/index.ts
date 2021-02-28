@@ -55,29 +55,24 @@ export class Rotation {
         }, (err, data) => {
             if (err) throw err;
             if (!data.RotationEnabled) {
-                console.log(`Secret ${this.event.SecretId} is not enabled for rotation.`);
                 throw new Error(`Secret ${this.event.SecretId} is not enabled for rotation.`);
             }
             if (data.VersionIdsToStages === undefined) {
-                console.log(`Secret ${this.event.SecretId} has no version for rotation.`);
                 throw new Error(`Secret ${this.event.SecretId} has no version for rotation.`);
             }
             if (data.VersionIdsToStages[this.event.ClientRequestToken] === undefined) {
-                console.log(`Secret version ${this.event.ClientRequestToken} has no stage for rotation of secret ${this.event.SecretId}.`);
                 throw new Error(`Secret version ${this.event.ClientRequestToken} has no stage for rotation of secret ${this.event.SecretId}.`);
             }
             if (data.VersionIdsToStages[this.event.ClientRequestToken].includes(VersionStage.CURRENT)) {
-                console.log(`Secret version ${this.event.ClientRequestToken} already set as ${VersionStage.CURRENT} for secret ${this.event.SecretId}.`);
-                return;
+                throw new Error(`Secret version ${this.event.ClientRequestToken} already set as ${VersionStage.CURRENT} for secret ${this.event.SecretId}.`);
             }
             if (!data.VersionIdsToStages[this.event.ClientRequestToken].includes(VersionStage.PENDING)) {
-                console.log(`Secret version ${this.event.ClientRequestToken} not set as ${VersionStage.PENDING} for rotation of secret ${this.event.SecretId}.`);
                 throw new Error(`Secret version ${this.event.ClientRequestToken} not set as ${VersionStage.PENDING} for rotation of secret ${this.event.SecretId}.`);
             }
         });
     }
 
-    async createSecret(secretGenerate: SecretProvider): Promise<void> {
+    async createSecret(secretGenerate: SecretProvider): Promise<string> {
         this.checkRotationStep(RotationStep.CREATE_SECRET);
 
         try {
@@ -87,7 +82,7 @@ export class Rotation {
                 VersionId: this.event.ClientRequestToken,
                 /* eslint-enable @typescript-eslint/naming-convention */
             }).promise();
-            console.log(`${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate}, of secret ${this.event.SecretId}.`);
+            return `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate}, of secret ${this.event.SecretId}.`;
         } catch (err) {
             if (err.code !== 'ResourceNotFoundException') throw err;
             await this.secretsManager.putSecretValue({
@@ -100,11 +95,11 @@ export class Rotation {
                 ],
                 /* eslint-enable @typescript-eslint/naming-convention */
             }).promise();
-            console.log(`${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`);
+            return `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`;
         }
     }
 
-    async setSecret(serviceSetup: SecretConsumer): Promise<void> {
+    async setSecret(serviceSetup: SecretConsumer): Promise<string> {
         this.checkRotationStep(RotationStep.SET_SECRET);
 
         const data = await this.secretsManager.getSecretValue({
@@ -115,10 +110,10 @@ export class Rotation {
         }).promise();
         await serviceSetup(data);
 
-        console.log(`${RotationStep.SET_SECRET}: Successfully set the secret in the service.`);
+        return `${RotationStep.SET_SECRET}: Successfully set the secret in the service.`;
     }
 
-    async testSecret(serviceTest: SecretConsumer): Promise<void> {
+    async testSecret(serviceTest: SecretConsumer): Promise<string> {
         this.checkRotationStep(RotationStep.TEST_SECRET);
 
         const data = await this.secretsManager.getSecretValue({
@@ -129,10 +124,10 @@ export class Rotation {
         }).promise();
         await serviceTest(data);
 
-        console.log(`${RotationStep.TEST_SECRET}: Successfully test the secret in the service.`);
+        return `${RotationStep.TEST_SECRET}: Successfully test the secret in the service.`;
     }
 
-    async finishSecret(): Promise<void> {
+    async finishSecret(): Promise<string> {
         this.checkRotationStep(RotationStep.FINISH_SECRET);
 
         const data = await this.secretsManager.getSecretValue({
@@ -142,8 +137,7 @@ export class Rotation {
             /* eslint-enable @typescript-eslint/naming-convention */
         }).promise();
         if (data.VersionId === this.event.ClientRequestToken) {
-            console.log(`${RotationStep.FINISH_SECRET}: Version ${data.VersionId} already marked as ${VersionStage.CURRENT} for ${this.event.SecretId}.`);
-            return;
+            return `${RotationStep.FINISH_SECRET}: Version ${data.VersionId} already marked as ${VersionStage.CURRENT} for ${this.event.SecretId}.`;
         }
 
         await this.secretsManager.updateSecretVersionStage({
@@ -163,10 +157,10 @@ export class Rotation {
             /* eslint-enable @typescript-eslint/naming-convention */
         }).promise();
 
-        console.log(`${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`);
+        return `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`;
     }
 
-    async revokePreviousSecret(revoke: SecretConsumer): Promise<void> {
+    async revokePreviousSecret(revoke: SecretConsumer): Promise<string> {
         const data = await this.secretsManager.getSecretValue({
             /* eslint-disable @typescript-eslint/naming-convention */
             SecretId: this.event.SecretId,
@@ -175,7 +169,7 @@ export class Rotation {
         }).promise();
         await revoke(data);
 
-        console.log(`revokePreviousSecret: Successfully revoke previous version ${data.VersionId} for secret ${this.event.SecretId}.`);
+        return `revokePreviousSecret: Successfully revoke previous version ${data.VersionId} for secret ${this.event.SecretId}.`;
     }
 
     private checkRotationStep(expect: RotationStep): void {
