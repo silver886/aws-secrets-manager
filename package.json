@@ -6,8 +6,8 @@
   "types": "./lib/index.d.ts",
   "scripts": {
     "comments": "leasot --ignore node_modules/** .git/** --tags NOTE OPTIMIZE TODO HACK XXX FIXME BUG --filetype .ts **",
-    "test-watch": "tsc -w -p ./test/tsconfig.test.json",
-    "test-build": "tsc -p ./test/tsconfig.test.json",
+    "test-watch": "tsc -w -p ./test/tsconfig.json",
+    "test-build": "tsc -p ./test/tsconfig.json",
     "test": "jest",
     "prepare": "tsc",
     "prepublishOnly": "npm run test-build && npm test"
