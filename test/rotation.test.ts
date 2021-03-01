@@ -232,7 +232,9 @@ describe('During secret rotation', () => {
                 const rotation = new src.Rotation(event);
 
                 expect(await rotation.createSecret({
-                    SecretString: 'secret', // eslint-disable-line @typescript-eslint/naming-convention
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    SecretString: 'secret',
+                    /* eslint-enable @typescript-eslint/naming-convention */
                 })).toMatchObject({
                     message: `${src.RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${event.SecretId} with version ${event.ClientRequestToken}.`,
                 });
