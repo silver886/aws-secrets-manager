@@ -9,7 +9,7 @@ type SecretsManagerTypesGetSecretValueCallback = (err: sdk.AWSError | undefined,
 type SecretsManagerTypesPutSecretValueCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.PutSecretValueResponse | undefined) => void;
 
 describe('Initial secret rotation', () => {
-    describe('given normal event', () => {
+    describe('with normal event', () => {
         const event: src.RotationEvent = {
             /* eslint-disable @typescript-eslint/naming-convention */
             Step: src.RotationStep.CREATE_SECRET,
@@ -170,7 +170,7 @@ describe('Initial secret rotation', () => {
         });
     });
 
-    describe('given abnormal event', () => {
+    describe('with abnormal event', () => {
         const event: unknown = {};
 
         it('rotation cycle should not be created', () => {
@@ -184,7 +184,7 @@ describe('Initial secret rotation', () => {
 });
 
 describe('During secret rotation', () => {
-    describe('given normal rotation cycle at create secret step', () => {
+    describe('with normal rotation cycle at create secret step', () => {
         const event: src.RotationEvent = {
             /* eslint-disable @typescript-eslint/naming-convention */
             Step: src.RotationStep.CREATE_SECRET,
