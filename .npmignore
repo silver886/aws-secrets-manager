@@ -1,7 +1,10 @@
-.github
-.vscode
-.eslintrc.js
-jest.config.js
-tsconfig.json
-src
-test
+/.github
+/.vscode
+/.eslintrc.js
+/jest.config.js
+/tsconfig.json
+/src
+/test
+/lib/src
+/lib/test
+/coverage
