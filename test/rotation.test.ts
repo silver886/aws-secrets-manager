@@ -4,7 +4,7 @@ import * as sdk from 'aws-sdk';
 import * as sdkMock from 'aws-sdk-mock';
 sdkMock.setSDKInstance(sdk);
 
-import * as src from '../src';
+import * as src from '../src/';
 
 type SecretsManagerTypesDescribeSecretCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.DescribeSecretResponse | undefined) => void;
 type SecretsManagerTypesGetSecretValueCallback = (err: sdk.AWSError | undefined, resp: sdk.SecretsManager.Types.GetSecretValueResponse | undefined) => void;
