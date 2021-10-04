@@ -4,6 +4,11 @@ import {SecretsManager} from 'aws-sdk';
 export interface Secret {
     /* eslint-disable @typescript-eslint/naming-convention */
     /**
+     * The unique identifier of this version of the secret.
+     */
+    VersionId?: SecretsManager.SecretVersionIdType;
+
+    /**
      * The decrypted part of the protected secret information that was originally provided
      * as binary data in the form of a byte array.
      * The response parameter represents the binary data as a base64-encoded string.
@@ -28,7 +33,7 @@ export interface Secret {
 }
 
 export interface Result {
-    message?: string;
+    message: string;
     secret?: Secret;
 }
 
@@ -109,8 +114,122 @@ export class Rotation {
         });
     }
 
+    public async putPendingSecretValue(secret: Secret): Promise<Result> {
+        this.checkRotationStep([RotationStep.CREATE_SECRET]);
+
+        try {
+            const data = await this.secretsManager.getSecretValue({
+                /* eslint-disable @typescript-eslint/naming-convention */
+                SecretId:  this.event.SecretId,
+                VersionId: this.event.ClientRequestToken,
+                /* eslint-enable @typescript-eslint/naming-convention */
+            }).promise();
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate?.toString() ?? 'unknown'}, of secret ${this.event.SecretId}.`,
+                secret:  data,
+            };
+        } catch (err: unknown) {
+            if ((err as AWSError).code !== 'ResourceNotFoundException') throw err;
+            await this.secretsManager.putSecretValue({
+                ...secret,
+                /* eslint-disable @typescript-eslint/naming-convention */
+                SecretId:           this.event.SecretId,
+                ClientRequestToken: this.event.ClientRequestToken,
+                VersionStages:      [
+                    VersionStage.PENDING,
+                ],
+                /* eslint-enable @typescript-eslint/naming-convention */
+            }).promise();
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`,
+            };
+        }
+    }
+
+    public async getPendingSecretValue(secret: Secret): Promise<Result> {
+        this.checkRotationStep([RotationStep.SET_SECRET, RotationStep.TEST_SECRET]);
+
+        try {
+            const data = await this.secretsManager.getSecretValue({
+                /* eslint-disable @typescript-eslint/naming-convention */
+                SecretId:  this.event.SecretId,
+                VersionId: this.event.ClientRequestToken,
+                /* eslint-enable @typescript-eslint/naming-convention */
+            }).promise();
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${this.event.ClientRequestToken}, created at ${data.CreatedDate?.toString() ?? 'unknown'}, of secret ${this.event.SecretId}.`,
+                secret:  data,
+            };
+        } catch (err: unknown) {
+            if ((err as AWSError).code !== 'ResourceNotFoundException') throw err;
+            await this.secretsManager.putSecretValue({
+                ...secret,
+                /* eslint-disable @typescript-eslint/naming-convention */
+                SecretId:           this.event.SecretId,
+                ClientRequestToken: this.event.ClientRequestToken,
+                VersionStages:      [
+                    VersionStage.PENDING,
+                ],
+                /* eslint-enable @typescript-eslint/naming-convention */
+            }).promise();
+            return {
+                message: `${RotationStep.CREATE_SECRET}: Successfully put the secret for ARN ${this.event.SecretId} with version ${this.event.ClientRequestToken}.`,
+            };
+        }
+    }
+
+    public async getCurrentSecretValue(): Promise<Result> {
+        this.checkRotationStep([RotationStep.FINISH_SECRET]);
+
+        const data = await this.secretsManager.getSecretValue({
+            /* eslint-disable @typescript-eslint/naming-convention */
+            SecretId:     this.event.SecretId,
+            VersionStage: VersionStage.CURRENT,
+            /* eslint-enable @typescript-eslint/naming-convention */
+        }).promise();
+        if (data.VersionId === this.event.ClientRequestToken) {
+            return {
+                message: `${RotationStep.FINISH_SECRET}: Version ${data.VersionId} already marked as ${VersionStage.CURRENT} for ${this.event.SecretId}.`,
+            };
+        }
+
+        return {
+            message: `${RotationStep.CREATE_SECRET}: Successfully retrieved version ${data.VersionId ?? 'unknown'}, created at ${data.CreatedDate?.toString() ?? 'unknown'}, of secret ${this.event.SecretId}.`,
+            secret:  data,
+        };
+    }
+
+    public async finalizePendingSecret(): Promise<Result> {
+        this.checkRotationStep([RotationStep.FINISH_SECRET], true);
+
+        const data = await this.getCurrentSecretValue();
+        if (!data.secret) return data;
+
+        await this.secretsManager.updateSecretVersionStage({
+            /* eslint-disable @typescript-eslint/naming-convention */
+            SecretId:            this.event.SecretId,
+            VersionStage:        VersionStage.CURRENT,
+            MoveToVersionId:     this.event.ClientRequestToken,
+            RemoveFromVersionId: data.secret.VersionId,
+            /* eslint-enable @typescript-eslint/naming-convention */
+        }).promise();
+
+        await this.secretsManager.updateSecretVersionStage({
+            /* eslint-disable @typescript-eslint/naming-convention */
+            SecretId:            this.event.SecretId,
+            VersionStage:        VersionStage.PENDING,
+            RemoveFromVersionId: this.event.ClientRequestToken,
+            /* eslint-enable @typescript-eslint/naming-convention */
+        }).promise();
+
+        return {
+            ...data,
+            message: `${RotationStep.FINISH_SECRET}: Successfully set ${VersionStage.CURRENT} to version ${this.event.ClientRequestToken} for secret ${this.event.SecretId}.`,
+        };
+    }
+
     public async createSecret(secret: Secret): Promise<Result> {
-        this.checkRotationStep(RotationStep.CREATE_SECRET);
+        this.checkRotationStep([RotationStep.CREATE_SECRET]);
 
         try {
             const data = await this.secretsManager.getSecretValue({
@@ -142,7 +261,7 @@ export class Rotation {
     }
 
     public async setSecret(): Promise<Result> {
-        this.checkRotationStep(RotationStep.SET_SECRET);
+        this.checkRotationStep([RotationStep.SET_SECRET]);
 
         let data: SecretsManager.GetSecretValueResponse = {};
         do {
@@ -167,7 +286,7 @@ export class Rotation {
     }
 
     public async testSecret(): Promise<Result> {
-        this.checkRotationStep(RotationStep.TEST_SECRET);
+        this.checkRotationStep([RotationStep.TEST_SECRET]);
 
         let data: SecretsManager.GetSecretValueResponse = {};
         do {
@@ -192,7 +311,7 @@ export class Rotation {
     }
 
     public async finishSecret(): Promise<Result> {
-        this.checkRotationStep(RotationStep.FINISH_SECRET);
+        this.checkRotationStep([RotationStep.FINISH_SECRET]);
 
         const data = await this.secretsManager.getSecretValue({
             /* eslint-disable @typescript-eslint/naming-convention */
@@ -229,7 +348,12 @@ export class Rotation {
         };
     }
 
-    private checkRotationStep(expect: RotationStep): void {
-        if (this.event.Step !== expect) throw new Error(`${this.event.Step}: Expect in step ${expect}.`);
+    private checkRotationStep(expect: RotationStep[], force?: boolean): void {
+        if (!expect.includes(this.event.Step)) {
+            const message = `${this.event.Step}: Expect in step collection: ${expect.join(', ')}.`;
+            if (force) throw new Error(message);
+            // eslint-disable-next-line no-console
+            else console.log(message);
+        }
     }
 }
